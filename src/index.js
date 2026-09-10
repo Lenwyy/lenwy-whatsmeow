@@ -1,6 +1,7 @@
 // Lenwy Was Here: Lenwy Whatsmeow Socket
 
 import { WhatsMeowBridge } from "./bridge.js";
+import { chatLog } from "./chatlog.js";
 
 export function makeWASocket(options = {}) {
   const bridge = new WhatsMeowBridge(options);
@@ -31,3 +32,5 @@ export function makeWASocket(options = {}) {
     editMessage: (jid, key, text) => bridge.editMessage(jid, key, text),
   };
 }
+
+export { chatLog };
