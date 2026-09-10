@@ -1,6 +1,6 @@
 {
     "name": "lenwy-whatsmeow",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "High-performance WhatsApp bot library bridging Go engine (whatsmeow) and Node.js via Stdio IPC",
     "type": "module",
     "main": "./src/index.js",
