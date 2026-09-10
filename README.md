@@ -64,9 +64,8 @@ Menampilkan log pesan masuk di terminal secara rapi, berwaktu, dan berwarna meng
 JavaScript
 
 ```js
-sock.ev.on("messages.upsert", ({ m }) => {
-  // Cetak log pesan otomatis ke terminal
-  chatLog(m);
+sock.ev.on("messages.upsert", ({ meta, raw }) => {
+  chatLog({ ...meta, timestamp: raw.timestamp, isFromMe: raw.isFromMe, pushName: meta.pushname });
 });
 ```
 
@@ -77,8 +76,8 @@ JavaScript
 
 ```js
 sock.ev.on("messages.upsert", ({ m }) => {
-  const number = extractNumber(m.sender);
-  console.log(`Pesan dari nomor: ${number}`); // Output: "628xxx"
+  const number = extractNumber(meta.sender);
+  console.log(`Pesan dari: ${number}`);
 });
 ```
 
