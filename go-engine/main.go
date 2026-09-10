@@ -294,19 +294,22 @@ func main() {
 				botJid = client.Store.ID.ToNonAD().String()
 			}
 
+			// Prioritaskan PNJID (Phone Number JID)
+			senderJID := v.Info.Sender.ToNonAD()
+
 			sendIPC("messages.upsert", map[string]interface{}{
-				"id":           v.Info.ID,
-				"chat":         v.Info.Chat.String(),
-				"sender":       v.Info.Sender.User,
-				"senderJid":    v.Info.Sender.String(),
-				"pushName":     v.Info.PushName,
-				"isFromMe":     v.Info.IsFromMe,
-				"timestamp":    v.Info.Timestamp.Unix(),
-				"type":         msgType,
-				"body":         body,
-				"quotedId":     quotedID,
-				"quotedSender": quotedSender,
-				"botJid":       botJid,
+    			"id":           v.Info.ID,
+			    "chat":         v.Info.Chat.String(),
+			    "sender":       senderJID.User,
+			    "senderJid":    senderJID.String(),
+			    "pushName":     v.Info.PushName,
+			    "isFromMe":     v.Info.IsFromMe,
+			    "timestamp":    v.Info.Timestamp.Unix(),
+			    "type":         msgType,
+			    "body":         body,
+			    "quotedId":     quotedID,
+			    "quotedSender": quotedSender,
+			    "botJid":       botJid,
 			})
 		}
 	})
@@ -679,7 +682,7 @@ func main() {
 					}
 				}
 
-			// Group Subject and Description
+			// Group Subject
 			case "setGroupSubject":
 				var p struct {
 					JID     string `json:"jid"`

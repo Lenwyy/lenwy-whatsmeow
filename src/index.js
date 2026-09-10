@@ -1,7 +1,6 @@
-// Lenwy Was Here: Lenwy Whatsmeow Socket
-
 import { WhatsMeowBridge } from "./bridge.js";
 import { chatLog } from "./chatlog.js";
+import { extractNumber, isLid, isGroup, jidNormalizedUser } from "./utils.js";
 
 export function makeWASocket(options = {}) {
   const bridge = new WhatsMeowBridge(options);
@@ -33,4 +32,4 @@ export function makeWASocket(options = {}) {
   };
 }
 
-export { chatLog };
+export { chatLog, extractNumber, isLid, isGroup, jidNormalizedUser };

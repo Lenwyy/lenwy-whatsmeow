@@ -43,6 +43,73 @@ Prasyarat
 
 ---
 
+## Utility Helpers
+
+Library `lenwy-whatsmeow` menyediakan berbagai fungsi helper bawaan untuk mempermudah pengolahan pesan, JID, dan logging.
+
+```javascript
+import { 
+  makeWASocket, 
+  chatLog, 
+  extractNumber, 
+  isGroup, 
+  isLid, 
+  jidNormalizedUser 
+} from "lenwy-whatsmeow";
+```
+
+### Pretty Chat Logger (chatLog)
+
+Menampilkan log pesan masuk di terminal secara rapi, berwaktu, dan berwarna menggunakan badge.
+JavaScript
+
+```js
+sock.ev.on("messages.upsert", ({ m }) => {
+  // Cetak log pesan otomatis ke terminal
+  chatLog(m);
+});
+```
+
+### Extract Phone Number (extractNumber)
+
+Mengambil nomor telepon murni dari string JID (otomatis membersihkan domain @s.whatsapp.net, @lid, @g.us, serta ID device seperti :12).
+JavaScript
+
+```js
+sock.ev.on("messages.upsert", ({ m }) => {
+  const number = extractNumber(m.sender);
+  console.log(`Pesan dari nomor: ${number}`); // Output: "628xxx"
+});
+```
+
+### Check Group (isGroup) & LID (isLid)
+
+Helper sederhana untuk mengecek tipe JID pengirim atau chat tempat pesan masuk.
+JavaScript
+
+```js
+if (isGroup(m.chat)) {
+  console.log("Pesan berasal dari grup!");
+}
+
+if (isLid(m.sender)) {
+  console.log("Pengirim menggunakan identitas LID WhatsApp");
+}
+```
+
+### Normalize User JID (jidNormalizedUser)
+
+Menghapus suffix Multi-Device ID (contoh: :12) dari JID pengguna tanpa mengubah domain-nya.
+JavaScript
+
+```js
+const rawJid = "628123456789:12@s.whatsapp.net";
+const cleanJid = jidNormalizedUser(rawJid);
+
+console.log(cleanJid); // Output: "628123456789@s.whatsapp.net"
+```
+---
+
 ## Mulai Cepat (Quick Start)
 
 Berikut contoh dasar untuk menghubungkan bot ke WhatsApp:
