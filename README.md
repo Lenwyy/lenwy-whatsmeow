@@ -34,6 +34,7 @@ yarn add lenwy-whatsmeow
 Library ini tidak membutuhkan instalasi Go di server atau komputer kamu!
 
 Binary hasil kompilasi Go untuk Linux (main_linux) dan Windows (main_win.exe) sudah dibundel langsung di dalam paket. Kamu bisa langsung menjalankannya di platform hosting berbasis Node.js seperti Pterodactyl (Egg Node.js), VPS, maupun komputer lokal tanpa setup tambahan.
+
 Prasyarat
 
 - Node.js: Versi LTS terbaru (v18+ disarankan).
@@ -52,6 +53,12 @@ import { makeWASocket } from "lenwy-whatsmeow";
 const conn = makeWASocket({
   sessionName: "my-session", // Nama sesi, bebas kamu tentukan
 });
+
+// PENTING: Wajib Dipanggil Secara Manual!
+// makeWASocket() Hanya Menyiapkan Instance, Belum Menyalakan Proses Go Engine-nya.
+// Tanpa Ini, Semua Method Seperti requestPairingCode() Akan Gagal Dengan Error
+// "Go process belum berjalan."
+conn.start();
 
 // Status koneksi
 conn.ev.on("connection.update", (data) => {
@@ -73,6 +80,10 @@ conn.ev.on("pairing_code", (code) => {
 conn.ev.on("messages.upsert", (m) => {
   console.log("Pesan Masuk:", m);
 });
+
+// Minta kode pairing (panggil SETELAH conn.start(), boleh langsung tanpa delay
+// tambahan karena perintah akan otomatis antre sampai proses Go-nya siap)
+await conn.requestPairingCode("628xxxxxxxxxx");
 ```
 
 > **Catatan:** Nama fungsi/opsi seperti `sessionName` mengikuti pola umum yang dipakai di seluruh contoh dokumentasi ini.
@@ -383,7 +394,13 @@ Semua proses (deteksi jenis media, konversi, sampai pengiriman) ditangani otomat
 
 ---
 
-## Menghentikan Bot dengan Aman
+## Menyalakan & Menghentikan Bot
+
+Sebelum melakukan aksi apa pun (termasuk `requestPairingCode`), proses Go engine harus dinyalakan lebih dulu:
+
+```javascript
+conn.start();
+```
 
 Untuk mematikan bot secara terprogram tanpa merusak sesi:
 
@@ -405,3 +422,6 @@ A: Kemungkinan besar target mengaktifkan privasi "siapa yang bisa menambahkanku 
 
 **Q: Koneksi WhatsApp saya sering putus, apa perlu scan ulang?**
 A: Tidak. Engine akan otomatis mencoba menyambung ulang di latar belakang. Kamu bisa memantau prosesnya lewat event `connection.update`.
+
+**Q: Muncul error `"Go process belum berjalan."` saat memanggil `requestPairingCode()` (atau method lain).**
+A: `makeWASocket()` hanya menyiapkan instance-nya saja, belum menyalakan proses Go engine-nya. Kamu wajib memanggil `conn.start()` secara manual sebelum menggunakan method apa pun (`requestPairingCode`, `sendMessage`, dll). Perintah yang dipanggil setelah `start()` akan otomatis antre sampai proses Go-nya siap, jadi tidak perlu menambahkan delay/`setTimeout` manual.
