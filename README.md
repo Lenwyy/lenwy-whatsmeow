@@ -437,3 +437,8 @@ A: Tidak. Engine akan otomatis mencoba menyambung ulang di latar belakang. Kamu 
 
 **Q: Muncul error `"Go process belum berjalan."` saat memanggil `requestPairingCode()` (atau method lain).**
 A: `makeWASocket()` hanya menyiapkan instance-nya saja, belum menyalakan proses Go engine-nya. Kamu wajib memanggil `conn.start()` secara manual sebelum menggunakan method apa pun (`requestPairingCode`, `sendMessage`, dll). Perintah yang dipanggil setelah `start()` akan otomatis antre sampai proses Go-nya siap, jadi tidak perlu menambahkan delay/`setTimeout` manual.
+
+## License
+
+Proyek ini dilisensikan di bawah [Mozilla Public License 2.0](LICENSE). 
+Proyek ini dibungkus menggunakan dan memanfaatkan library [whatsmeow](https://github.com/tulir/whatsmeow) yang berlisensi MPL-2.0.
