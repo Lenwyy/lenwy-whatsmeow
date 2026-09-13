@@ -124,6 +124,12 @@ await conn.sendMessage(jid, {
   caption: "Deskripsi Video",
 });
 
+// Kirim Gambar/Video Langsung Dari URL
+await conn.sendMessage(jid, {
+  image: { url: "https://example.com/image.jpg" },
+  caption: "Kirim langsung dari CDN!"
+});
+
 // Kirim Stiker
 await conn.sendMessage(jid, {
   sticker: "./stiker.webp",

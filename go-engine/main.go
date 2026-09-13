@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -1092,30 +1093,47 @@ func main() {
 
 			// Send Media
 			case "sendMedia":
-				var p SendMediaPayload
+    			var p SendMediaPayload
 
-				if err := json.Unmarshal(cmd.Payload, &p); err == nil {
-					targetJID, err := types.ParseJID(p.JID)
+    			if err := json.Unmarshal(cmd.Payload, &p); err == nil {
+        			targetJID, err := types.ParseJID(p.JID)
 
-					if err != nil {
-						sendIPC("response", map[string]interface{}{
-							"id":     cmd.ID,
-							"status": "error",
-							"error":  "Invalid JID",
-						})
-						continue
-					}
+        			if err != nil {
+            			sendIPC("response", map[string]interface{}{
+                			"id":     cmd.ID,
+                			"status": "error",
+                			"error":  "Invalid JID",
+            			})
+            			continue
+        			}
 
-					fileData, err := os.ReadFile(p.FilePath)
+        			var fileData []byte
 
-					if err != nil {
-						sendIPC("response", map[string]interface{}{
-							"id":     cmd.ID,
-							"status": "error",
-							"error":  "File tidak ditemukan: " + err.Error(),
-						})
-						continue
-					}
+        			if strings.HasPrefix(p.FilePath, "http://") || strings.HasPrefix(p.FilePath, "https://") {
+            			resp, httpErr := http.Get(p.FilePath)
+            			if httpErr != nil {
+                			sendIPC("response", map[string]interface{}{
+                    			"id":     cmd.ID,
+                    			"status": "error",
+                    			"error":  "Gagal mengambil URL: " + httpErr.Error(),
+                			})
+                			continue
+            			}
+            			defer resp.Body.Close()
+
+            			fileData, err = io.ReadAll(resp.Body)
+        			} else {
+            			fileData, err = os.ReadFile(p.FilePath)
+        			}
+
+        			if err != nil {
+            			sendIPC("response", map[string]interface{}{
+                			"id":     cmd.ID,
+                			"status": "error",
+                			"error":  "Gagal membaca file: " + err.Error(),
+            			})
+            			continue
+        			}
 
 					var waMediaType whatsmeow.MediaType
 
