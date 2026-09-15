@@ -5,6 +5,7 @@
 // Thanks to the following libraries:
 // - github.com/mattn/go-sqlite3
 // - go.mau.fi/whatsmeow
+// - github.com/kingard888
 
 package main
 
@@ -665,7 +666,7 @@ func main() {
 				} else {
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": jid.String()})
 				}
-    case "newsletterMetadata":
+	        case "newsletterMetadata":
 	var p struct {
 		Type string `json:"type"`
 		Key  string `json:"key"`
@@ -1024,7 +1025,6 @@ case "newsletterSubscribeLiveUpdates":
 			"resp":   duration.String(),
 		})
 	}
-
 			case "leaveGroup":
 				var p GroupJIDPayload
 				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
