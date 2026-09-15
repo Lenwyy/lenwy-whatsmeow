@@ -11,6 +11,20 @@ export function makeWASocket(options = {}) {
     stop: () => bridge.stop(),
     end: () => bridge.stop(),
     requestPairingCode: (phone) => bridge.requestPairingCode(phone),
+    profilePictureUrl: (jid, type = "image") => bridge.profilePictureUrl(jid, type),
+    getUserInfo: (jids) => bridge.getUserInfo(jids),
+    isOnWhatsApp: (phones) => bridge.isOnWhatsApp(phones),
+    getJoinedGroups: () => bridge.getJoinedGroups(),
+    getGroupInfoFromLink: (code) => bridge.getGroupInfoFromLink(code),
+    joinGroupWithLink: (code) => bridge.joinGroupWithLink(code),
+    leaveGroup: (jid) => bridge.leaveGroup(jid),
+    getBusinessProfile: (jid) => bridge.getBusinessProfile(jid),
+    sendPresence: (state) => bridge.sendPresence(state),
+    sendChatPresence: (jid, state, media) =>
+      bridge.sendChatPresence(jid, state, media),
+    subscribePresence: (jid) => bridge.subscribePresence(jid),
+    markRead: (ids, timestamp, chat, sender, played) =>
+      bridge.markRead(ids, timestamp, chat, sender, played),
     sendMessage: (jid, content, options) =>
       bridge.sendMessage(jid, content, options),
     downloadMedia: (target, outputDir) =>
