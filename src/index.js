@@ -11,6 +11,36 @@ export function makeWASocket(options = {}) {
     stop: () => bridge.stop(),
     end: () => bridge.stop(),
     requestPairingCode: (phone) => bridge.requestPairingCode(phone),
+    profilePictureUrl: (jid, type = "image") => bridge.profilePictureUrl(jid, type),
+    getUserInfo: (jids) => bridge.getUserInfo(jids),
+    isOnWhatsApp: (phones) => bridge.isOnWhatsApp(phones),
+    getJoinedGroups: () => bridge.getJoinedGroups(),
+    getGroupInfoFromLink: (code) => bridge.getGroupInfoFromLink(code),
+    joinGroupWithLink: (code) => bridge.joinGroupWithLink(code),
+    leaveGroup: (jid) => bridge.leaveGroup(jid),
+    getBusinessProfile: (jid) => bridge.getBusinessProfile(jid),
+    newsletterMetadata: (type, key) => bridge.newsletterMetadata(type, key),
+    newsletterFollow: (jid) => bridge.newsletterFollow(jid),
+    newsletterUnfollow: (jid) => bridge.newsletterUnfollow(jid),
+    newsletterMute: (jid) => bridge.newsletterMute(jid),
+    newsletterUnmute: (jid) => bridge.newsletterUnmute(jid),
+    newsletterCreate: (name, description) =>
+      bridge.newsletterCreate(name, description),
+    newsletterReactMessage: (jid, serverId, emoji) =>
+      bridge.newsletterReactMessage(jid, serverId, emoji),
+    newsletterSubscribed: () => bridge.newsletterSubscribed(),
+    newsletterFetchMessages: (jid, count, before) =>
+      bridge.newsletterFetchMessages(jid, count, before),
+    newsletterMarkViewed: (jid, serverIds) =>
+      bridge.newsletterMarkViewed(jid, serverIds),
+    newsletterSubscribeLiveUpdates: (jid) =>
+      bridge.newsletterSubscribeLiveUpdates(jid),
+    sendPresence: (state) => bridge.sendPresence(state),
+    sendChatPresence: (jid, state, media) =>
+      bridge.sendChatPresence(jid, state, media),
+    subscribePresence: (jid) => bridge.subscribePresence(jid),
+    markRead: (ids, timestamp, chat, sender, played) =>
+      bridge.markRead(ids, timestamp, chat, sender, played),
     sendMessage: (jid, content, options) =>
       bridge.sendMessage(jid, content, options),
     downloadMedia: (target, outputDir) =>

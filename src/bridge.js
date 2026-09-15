@@ -5,6 +5,7 @@
 // Thanks to the following libraries:
 // - github.com/mattn/go-sqlite3
 // - go.mau.fi/whatsmeow
+// - github.com/kingard888
 
 import { spawn } from "child_process";
 import readline from "readline";
@@ -25,6 +26,8 @@ export class WhatsMeowBridge extends EventEmitter {
     this.sessionName = options.sessionName || "lenwy";
     this.goProcess = null;
     this.pendingRequests = new Map();
+    this.messageCache = new Map();
+    this.messageCacheLimit = 5000;
 
     const cleanExit = async () => {
       await this.stop();
@@ -51,16 +54,15 @@ export class WhatsMeowBridge extends EventEmitter {
       } catch (e) {}
     }
 
-    if (fs.existsSync(binaryPath)) {
-      this.goProcess = spawn(binaryPath, [this.sessionName], { cwd: goPath });
-    } else {
-      console.log(
-        "[BRIDGE] Binary tidak ditemukan, menggunakan fallback 'go run main.go'...",
+    if (!fs.existsSync(binaryPath)) {
+      throw new Error(
+        `[BRIDGE] Binary engine tidak ditemukan: ${binaryPath}`
       );
-      this.goProcess = spawn("go", ["run", "main.go", this.sessionName], {
-        cwd: goPath,
-      });
     }
+
+    this.goProcess = spawn(binaryPath, [this.sessionName], {
+      cwd: goPath,
+    });
 
     const rl = readline.createInterface({
       input: this.goProcess.stdout,
@@ -171,12 +173,50 @@ export class WhatsMeowBridge extends EventEmitter {
     }
 
     if (data.event === "messages.upsert") {
-      const { m, meta } = parseToBaileys(data.data);
+      const raw = data.data || {};
+      const { m, meta } = parseToBaileys(raw);
+
+      if (raw.id) {
+        this.messageCache.set(raw.id, {
+          id: raw.id,
+          chat: raw.chat || "",
+          senderJid: raw.senderJid || "",
+          pushName: raw.pushName || "",
+          body: raw.body || "",
+          type: raw.type || "Chat",
+          timestamp: raw.timestamp || 0,
+        });
+
+        if (this.messageCache.size > this.messageCacheLimit) {
+          const oldest = this.messageCache.keys().next().value;
+          if (oldest) this.messageCache.delete(oldest);
+        }
+      }
+
+      if (m && raw) {
+        m.quotedId = raw.quotedId || "";
+        m.quotedSender = raw.quotedSender || "";
+        m.quotedType = raw.quotedType || "";
+        m.quotedText = raw.quotedText || "";
+
+        if (!m.quotedText && raw.quotedId) {
+          const quoted = this.messageCache.get(raw.quotedId);
+
+          if (quoted) {
+            m.quotedText = quoted.body || "";
+            m.quotedType = quoted.type || "Chat";
+
+            if (!m.quotedSender) {
+              m.quotedSender = quoted.senderJid || "";
+            }
+          }
+        }
+      }
 
       this.emit("messages.upsert", {
         m,
         meta,
-        raw: data.data,
+        raw,
       });
 
       return;
@@ -199,6 +239,269 @@ export class WhatsMeowBridge extends EventEmitter {
     });
 
     this.goProcess.stdin.write(command + "\n");
+  }
+
+  async getUserInfo(jids) {
+    const id = Math.random().toString(36).slice(2);
+    const list = Array.isArray(jids) ? jids : [jids];
+
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "getUserInfo",
+        id,
+        payload: { jids: list },
+      }),
+    );
+  }
+
+  async isOnWhatsApp(phones) {
+    const id = Math.random().toString(36).slice(2);
+    const list = Array.isArray(phones) ? phones : [phones];
+
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "isOnWhatsApp",
+        id,
+        payload: { phones: list },
+      }),
+    );
+  }
+
+  async getJoinedGroups() {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({ action: "getJoinedGroups", id, payload: {} }),
+    );
+  }
+
+  async getGroupInfoFromLink(code) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "getGroupInfoFromLink",
+        id,
+        payload: { code },
+      }),
+    );
+  }
+
+  async joinGroupWithLink(code) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "joinGroupWithLink",
+        id,
+        payload: { code },
+      }),
+    );
+  }
+
+  async leaveGroup(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "leaveGroup",
+        id,
+        payload: { jid },
+      }),
+    );
+  }
+
+  async newsletterMetadata(type, key) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "newsletterMetadata",
+        id,
+        payload: { type, key },
+      }),
+    );
+  }
+
+  async newsletterFollow(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({ action: "newsletterFollow", id, payload: { jid } }),
+    );
+  }
+
+  async newsletterUnfollow(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({ action: "newsletterUnfollow", id, payload: { jid } }),
+    );
+  }
+
+  async newsletterMute(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({ action: "newsletterMute", id, payload: { jid } }),
+    );
+  }
+
+  async newsletterUnmute(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({ action: "newsletterUnmute", id, payload: { jid } }),
+    );
+  }
+
+  async newsletterCreate(name, description = "") {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "newsletterCreate",
+        id,
+        payload: { name, description },
+      }),
+    );
+  }
+
+  async newsletterReactMessage(jid, serverId, emoji) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "newsletterReactMessage",
+        id,
+        payload: { jid, serverId, reaction: emoji },
+      }),
+    );
+  }
+
+  async newsletterSubscribed() {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({ action: "newsletterSubscribed", id, payload: {} }),
+    );
+  }
+
+  async newsletterFetchMessages(jid, count = 0, before = 0) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "newsletterFetchMessages",
+        id,
+        payload: { jid, count, before },
+      }),
+    );
+  }
+
+  async newsletterMarkViewed(jid, serverIds) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "newsletterMarkViewed",
+        id,
+        payload: {
+          jid,
+          serverIds: Array.isArray(serverIds) ? serverIds : [serverIds],
+        },
+      }),
+    );
+  }
+
+  async newsletterSubscribeLiveUpdates(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "newsletterSubscribeLiveUpdates",
+        id,
+        payload: { jid },
+      }),
+    );
+  }
+
+  async getBusinessProfile(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "getBusinessProfile",
+        id,
+        payload: { jid },
+      }),
+    );
+  }
+
+  async sendPresence(state = "available") {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "sendPresence",
+        id,
+        payload: { state },
+      }),
+    );
+  }
+
+  async sendChatPresence(jid, state = "composing", media = "text") {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "sendChatPresence",
+        id,
+        payload: { jid, state, media },
+      }),
+    );
+  }
+
+  async subscribePresence(jid) {
+    const id = Math.random().toString(36).slice(2);
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "subscribePresence",
+        id,
+        payload: { jid },
+      }),
+    );
+  }
+
+  async markRead(ids, timestamp = 0, chat = "", sender = "", played = false) {
+    const id = Math.random().toString(36).slice(2);
+
+    if (ids && typeof ids === "object" && !Array.isArray(ids)) {
+      const opts = ids;
+      ids = opts.ids || [];
+      timestamp = opts.timestamp || 0;
+      chat = opts.chat || "";
+      sender = opts.sender || "";
+      played = Boolean(opts.played);
+    }
+
+    return this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "markRead",
+        id,
+        payload: {
+          ids: Array.isArray(ids) ? ids : [ids],
+          timestamp,
+          chat,
+          sender,
+          played: Boolean(played),
+        },
+      }),
+    );
   }
 
   async groupMetadata(jid) {
@@ -384,6 +687,28 @@ export class WhatsMeowBridge extends EventEmitter {
     });
 
     return this._sendRequest(id, command);
+  }
+
+  async profilePictureUrl(jid, type = "image") {
+    const id = Math.random().toString(36).slice(2);
+
+    const payload = {
+      jid,
+      type: typeof type === "string" ? type : "image",
+    };
+
+    const info = await this._sendRequest(
+      id,
+      JSON.stringify({
+        action: "getProfilePicture",
+        id,
+        payload,
+      }),
+    );
+
+    if (!info) return undefined;
+
+    return info.url ?? info.URL ?? undefined;
   }
 
   async sendMessage(jid, content, options = {}) {
