@@ -5,7 +5,6 @@
 // Thanks to the following libraries:
 // - github.com/mattn/go-sqlite3
 // - go.mau.fi/whatsmeow
-// - github.com/kingard888
 
 package main
 
@@ -96,6 +95,37 @@ type GroupLinkPayload struct {
 	Code string `json:"code"`
 }
 
+type NewsletterMetadataPayload struct {
+	Type string `json:"type"`
+	Key  string `json:"key"`
+}
+
+type NewsletterJIDPayload struct {
+	JID string `json:"jid"`
+}
+
+type NewsletterCreatePayload struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type NewsletterReactPayload struct {
+	JID      string `json:"jid"`
+	ServerID int    `json:"serverId"`
+	Reaction string `json:"reaction"`
+}
+
+type NewsletterMessagesPayload struct {
+	JID    string `json:"jid"`
+	Count  int    `json:"count"`
+	Before int    `json:"before"`
+}
+
+type NewsletterMarkViewedPayload struct {
+	JID       string `json:"jid"`
+	ServerIDs []int  `json:"serverIds"`
+}
+
 type PresencePayload struct {
 	State string `json:"state"`
 }
@@ -123,37 +153,6 @@ type GroupParticipantsPayload struct {
 type GroupSettingPayload struct {
 	JID     string `json:"jid"`
 	Setting string `json:"setting"`
-}
-
-type NewsletterMetadataPayload struct {
-	Type string `json:"type"`
-	Key  string `json:"key"`
-}
-
-type NewsletterJIDPayload struct {
-	JID string `json:"jid"`
-}
-
-type NewsletterCreatePayload struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
-type NewsletterReactPayload struct {
-	JID      string `json:"jid"`
-	ServerID string `json:"serverId"`
-	Reaction string `json:"reaction"`
-}
-
-type NewsletterMessagesPayload struct {
-	JID    string `json:"jid"`
-	Count  int    `json:"count"`
-	Before int64  `json:"before"`
-}
-
-type NewsletterMarkViewedPayload struct {
-	JID       string   `json:"jid"`
-	ServerIDs []string `json:"serverIds"`
 }
 
 var (
@@ -666,365 +665,7 @@ func main() {
 				} else {
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": jid.String()})
 				}
-	        case "newsletterMetadata":
-	var p struct {
-		Type string `json:"type"`
-		Key  string `json:"key"`
-	}
 
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	var (
-		info *types.NewsletterMetadata
-		err  error
-	)
-
-	if strings.EqualFold(p.Type, "invite") {
-		info, err = client.GetNewsletterInfoWithInvite(ctx, p.Key)
-	} else {
-		jid, parseErr := types.ParseJID(p.Key)
-		if parseErr != nil {
-			sendIPC("response", map[string]interface{}{
-				"id": cmd.ID, "status": "error", "error": parseErr.Error(),
-			})
-			continue
-		}
-
-		info, err = client.GetNewsletterInfo(ctx, jid)
-	}
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok", "resp": info,
-		})
-	}
-
-case "newsletterFollow":
-	var p struct {
-		JID string `json:"jid"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	err = client.FollowNewsletter(ctx, jid)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok",
-		})
-	}
-
-case "newsletterUnfollow":
-	var p struct {
-		JID string `json:"jid"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	err = client.UnfollowNewsletter(ctx, jid)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok",
-		})
-	}
-
-case "newsletterMute":
-	var p struct {
-		JID string `json:"jid"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	err = client.NewsletterToggleMute(ctx, jid, true)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok",
-		})
-	}
-
-case "newsletterUnmute":
-	var p struct {
-		JID string `json:"jid"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	err = client.NewsletterToggleMute(ctx, jid, false)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok",
-		})
-	}
-
-case "newsletterCreate":
-	var p struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	info, err := client.CreateNewsletter(ctx, whatsmeow.CreateNewsletterParams{
-		Name:        p.Name,
-		Description: p.Description,
-	})
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok", "resp": info,
-		})
-	}
-
-case "newsletterReactMessage":
-	var p struct {
-		JID      string `json:"jid"`
-		ServerID string `json:"serverId"`
-		Reaction string `json:"reaction"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	err = client.NewsletterSendReaction(
-		ctx,
-		jid,
-		types.MessageServerID(p.ServerID),
-		p.Reaction,
-		"",
-	)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok",
-		})
-	}
-
-case "newsletterSubscribed":
-	info, err := client.GetSubscribedNewsletters(ctx)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok", "resp": info,
-		})
-	}
-
-case "newsletterFetchMessages":
-	var p struct {
-		JID    string `json:"jid"`
-		Count  int    `json:"count"`
-		Before string `json:"before"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	info, err := client.GetNewsletterMessages(ctx, jid, &whatsmeow.GetNewsletterMessagesParams{
-		Count:  p.Count,
-		Before: types.MessageServerID(p.Before),
-	})
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok", "resp": info,
-		})
-	}
-
-case "newsletterMarkViewed":
-	var p struct {
-		JID       string   `json:"jid"`
-		ServerIDs []string `json:"serverIds"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	serverIDs := make([]types.MessageServerID, 0, len(p.ServerIDs))
-	for _, id := range p.ServerIDs {
-		serverIDs = append(serverIDs, types.MessageServerID(id))
-	}
-
-	err = client.NewsletterMarkViewed(ctx, jid, serverIDs)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "ok",
-		})
-	}
-
-case "newsletterSubscribeLiveUpdates":
-	var p struct {
-		JID string `json:"jid"`
-	}
-
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	jid, err := types.ParseJID(p.JID)
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-		continue
-	}
-
-	duration, err := client.NewsletterSubscribeLiveUpdates(ctx, jid)
-
-	if err != nil {
-		sendIPC("response", map[string]interface{}{
-			"id": cmd.ID, "status": "error", "error": err.Error(),
-		})
-	} else {
-		sendIPC("response", map[string]interface{}{
-			"id":     cmd.ID,
-			"status": "ok",
-			"resp":   duration.String(),
-		})
-	}
 			case "leaveGroup":
 				var p GroupJIDPayload
 				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
@@ -1041,6 +682,155 @@ case "newsletterSubscribeLiveUpdates":
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
 				} else {
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "newsletterMetadata":
+				var p NewsletterMetadataPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				var info *types.NewsletterMetadata
+				var err error
+				if strings.EqualFold(p.Type, "invite") {
+					info, err = client.GetNewsletterInfoWithInvite(ctx, p.Key)
+				} else {
+					jid, parseErr := types.ParseJID(p.Key)
+					if parseErr != nil {
+						sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": parseErr.Error()})
+						continue
+					}
+					info, err = client.GetNewsletterInfo(ctx, jid)
+				}
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+				}
+
+			case "newsletterFollow", "newsletterUnfollow", "newsletterMute", "newsletterUnmute":
+				var p NewsletterJIDPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				switch cmd.Action {
+				case "newsletterFollow":
+					err = client.FollowNewsletter(ctx, jid)
+				case "newsletterUnfollow":
+					err = client.UnfollowNewsletter(ctx, jid)
+				case "newsletterMute":
+					err = client.NewsletterToggleMute(ctx, jid, true)
+				case "newsletterUnmute":
+					err = client.NewsletterToggleMute(ctx, jid, false)
+				}
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "newsletterCreate":
+				var p NewsletterCreatePayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				info, err := client.CreateNewsletter(ctx, whatsmeow.CreateNewsletterParams{Name: p.Name, Description: p.Description})
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+				}
+
+			case "newsletterReactMessage":
+				var p NewsletterReactPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				err = client.NewsletterSendReaction(ctx, jid, types.MessageServerID(p.ServerID), p.Reaction, "")
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "newsletterSubscribed":
+				info, err := client.GetSubscribedNewsletters(ctx)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+				}
+
+			case "newsletterFetchMessages":
+				var p NewsletterMessagesPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				params := &whatsmeow.GetNewsletterMessagesParams{Count: p.Count, Before: types.MessageServerID(p.Before)}
+				messages, err := client.GetNewsletterMessages(ctx, jid, params)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": messages})
+				}
+
+			case "newsletterMarkViewed":
+				var p NewsletterMarkViewedPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				serverIDs := make([]types.MessageServerID, 0, len(p.ServerIDs))
+				for _, serverID := range p.ServerIDs {
+					serverIDs = append(serverIDs, types.MessageServerID(serverID))
+				}
+				err = client.NewsletterMarkViewed(ctx, jid, serverIDs)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "newsletterSubscribeLiveUpdates":
+				var p NewsletterJIDPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				interval, err := client.NewsletterSubscribeLiveUpdates(ctx, jid)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": interval.String()})
 				}
 
 			case "getBusinessProfile":
