@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
@@ -59,6 +60,7 @@ type SendMediaPayload struct {
 	FileName     string `json:"fileName"`
 	QuotedID     string `json:"quotedId"`
 	QuotedSender string `json:"quotedSender"`
+    GifPlayback  bool   `json:"gifPlayback"`
 }
 
 type DownloadMediaPayload struct {
@@ -72,6 +74,45 @@ type PairPhonePayload struct {
 
 type GroupJIDPayload struct {
 	JID string `json:"jid"`
+}
+
+type ProfilePicturePayload struct {
+	JID         string `json:"jid"`
+	Type        string `json:"type"`
+	ExistingID  string `json:"existingId"`
+	IsCommunity bool   `json:"isCommunity"`
+	CommonGID   string `json:"commonGid"`
+	InviteCode  string `json:"inviteCode"`
+}
+
+type UserInfoPayload struct {
+	JIDs []string `json:"jids"`
+}
+
+type IsOnWhatsAppPayload struct {
+	Phones []string `json:"phones"`
+}
+
+type GroupLinkPayload struct {
+	Code string `json:"code"`
+}
+
+type PresencePayload struct {
+	State string `json:"state"`
+}
+
+type ChatPresencePayload struct {
+	JID   string `json:"jid"`
+	State string `json:"state"`
+	Media string `json:"media"`
+}
+
+type MarkReadPayload struct {
+	IDs       []string `json:"ids"`
+	Timestamp int64    `json:"timestamp"`
+	Chat      string   `json:"chat"`
+	Sender    string   `json:"sender"`
+	Played    bool     `json:"played"`
 }
 
 type GroupParticipantsPayload struct {
@@ -170,7 +211,6 @@ func parseMessageContent(msg *waProto.Message) (string, string) {
 		if caption := img.GetCaption(); caption != "" {
 			return "Image", caption
 		}
-
 		return "Image", "Mengirimkan Gambar"
 	}
 
@@ -178,7 +218,6 @@ func parseMessageContent(msg *waProto.Message) (string, string) {
 		if caption := vid.GetCaption(); caption != "" {
 			return "Video", caption
 		}
-
 		return "Video", "Mengirimkan Video"
 	}
 
@@ -190,7 +229,6 @@ func parseMessageContent(msg *waProto.Message) (string, string) {
 		if fileName := doc.GetFileName(); fileName != "" {
 			return "Document", fileName
 		}
-
 		return "Document", "Mengirimkan Dokumen"
 	}
 
@@ -199,6 +237,49 @@ func parseMessageContent(msg *waProto.Message) (string, string) {
 	}
 
 	return "Chat", ""
+}
+
+func getContextInfo(msg *waProto.Message) *waProto.ContextInfo {
+	if msg == nil {
+		return nil
+	}
+	if x := msg.GetExtendedTextMessage(); x != nil {
+		return x.GetContextInfo()
+	}
+	if x := msg.GetImageMessage(); x != nil {
+		return x.GetContextInfo()
+	}
+	if x := msg.GetVideoMessage(); x != nil {
+		return x.GetContextInfo()
+	}
+	if x := msg.GetAudioMessage(); x != nil {
+		return x.GetContextInfo()
+	}
+	if x := msg.GetDocumentMessage(); x != nil {
+		return x.GetContextInfo()
+	}
+	if x := msg.GetStickerMessage(); x != nil {
+		return x.GetContextInfo()
+	}
+	return nil
+}
+
+func getQuotedMessage(msg *waProto.Message) (string, string, string) {
+	ctxInfo := getContextInfo(msg)
+	if ctxInfo == nil {
+		return "", "", ""
+	}
+
+	quotedID := ctxInfo.GetStanzaID()
+	quotedSender := ctxInfo.GetParticipant()
+	quotedText := ""
+	quotedType := ""
+
+	if quoted := ctxInfo.GetQuotedMessage(); quoted != nil {
+		quotedType, quotedText = parseMessageContent(quoted)
+	}
+
+	return quotedID, quotedSender, quotedType + "\x00" + quotedText
 }
 
 // Lenwy Disclaimer: This code is provided as-is and may not be suitable for production use. Use at your own risk.
@@ -272,6 +353,21 @@ func main() {
 			container.Close()
 			os.Exit(0)
 
+		case *events.Picture:
+			sendIPC("profilePicture.update", map[string]interface{}{
+				"jid":       v.JID.String(),
+				"author":    v.Author.String(),
+				"timestamp": v.Timestamp.Unix(),
+				"remove":    v.Remove,
+				"pictureId": v.PictureID,
+			})
+
+		case *events.Presence:
+			sendIPC("presence.update", v)
+
+		case *events.Receipt:
+			sendIPC("receipt.update", v)
+
 		case *events.Message:
 			msgCacheMutex.Lock()
 			msgCache[v.Info.ID] = v
@@ -281,12 +377,30 @@ func main() {
 
 			var quotedID string
 			var quotedSender string
+			var quotedText string
+			var quotedType string
 
-			if ext := v.Message.GetExtendedTextMessage(); ext != nil &&
-				ext.ContextInfo != nil {
+			if ctxInfo := getContextInfo(v.Message); ctxInfo != nil {
+				quotedID = ctxInfo.GetStanzaID()
+				quotedSender = ctxInfo.GetParticipant()
 
-				quotedID = ext.ContextInfo.GetStanzaID()
-				quotedSender = ext.ContextInfo.GetParticipant()
+				if quoted := ctxInfo.GetQuotedMessage(); quoted != nil {
+					quotedType, quotedText = parseMessageContent(quoted)
+				}
+			}
+
+			if quotedID != "" && quotedText == "" {
+				msgCacheMutex.RLock()
+				quotedMsg := msgCache[quotedID]
+				msgCacheMutex.RUnlock()
+
+				if quotedMsg != nil {
+					quotedType, quotedText = parseMessageContent(quotedMsg.Message)
+
+					if quotedSender == "" {
+						quotedSender = quotedMsg.Info.Sender.String()
+					}
+				}
 			}
 
 			botJid := ""
@@ -299,18 +413,20 @@ func main() {
 			senderJID := v.Info.Sender.ToNonAD()
 
 			sendIPC("messages.upsert", map[string]interface{}{
-    			"id":           v.Info.ID,
-			    "chat":         v.Info.Chat.String(),
-			    "sender":       senderJID.User,
-			    "senderJid":    senderJID.String(),
-			    "pushName":     v.Info.PushName,
-			    "isFromMe":     v.Info.IsFromMe,
-			    "timestamp":    v.Info.Timestamp.Unix(),
-			    "type":         msgType,
-			    "body":         body,
-			    "quotedId":     quotedID,
-			    "quotedSender": quotedSender,
-			    "botJid":       botJid,
+				"id":           v.Info.ID,
+				"chat":         v.Info.Chat.String(),
+				"sender":       senderJID.User,
+				"senderJid":    senderJID.String(),
+				"pushName":     v.Info.PushName,
+				"isFromMe":     v.Info.IsFromMe,
+				"timestamp":    v.Info.Timestamp.Unix(),
+				"type":         msgType,
+				"body":         body,
+				"quotedId":     quotedID,
+				"quotedSender": quotedSender,
+				"quotedType":   quotedType,
+				"quotedText":   quotedText,
+				"botJid":       botJid,
 			})
 		}
 	})
@@ -384,6 +500,315 @@ func main() {
 							"message": "Gagal pair: " + err.Error(),
 						})
 					}
+				}
+
+			case "getProfilePicture":
+				var p ProfilePicturePayload
+
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{
+						"id":     cmd.ID,
+						"status": "error",
+						"error":  err.Error(),
+					})
+					continue
+				}
+
+				if p.JID == "" {
+					sendIPC("response", map[string]interface{}{
+						"id":     cmd.ID,
+						"status": "error",
+						"error":  "JID tidak boleh kosong",
+					})
+					continue
+				}
+
+				targetJID, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{
+						"id":     cmd.ID,
+						"status": "error",
+						"error":  "Invalid JID: " + err.Error(),
+					})
+					continue
+				}
+
+				params := &whatsmeow.GetProfilePictureParams{
+					Preview:     strings.EqualFold(p.Type, "preview") || strings.EqualFold(p.Type, "thumbnail"),
+					ExistingID:  p.ExistingID,
+					IsCommunity: p.IsCommunity,
+					InviteCode:  p.InviteCode,
+				}
+
+				if p.CommonGID != "" {
+					commonGID, parseErr := types.ParseJID(p.CommonGID)
+					if parseErr != nil {
+						sendIPC("response", map[string]interface{}{
+							"id": cmd.ID, "status": "error", "error": "Invalid commonGid: " + parseErr.Error(),
+						})
+						continue
+					}
+					params.CommonGID = commonGID
+				}
+
+				info, err := client.GetProfilePictureInfo(ctx, targetJID, params)
+
+				if err != nil {
+					sendIPC("response", map[string]interface{}{
+						"id":     cmd.ID,
+						"status": "error",
+						"error":  err.Error(),
+					})
+					continue
+				}
+
+				sendIPC("response", map[string]interface{}{
+					"id":     cmd.ID,
+					"status": "ok",
+					"resp":   info,
+				})
+
+			case "getUserInfo":
+				var p UserInfoPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+
+				jids := make([]types.JID, 0, len(p.JIDs))
+				for _, rawJID := range p.JIDs {
+					j, err := types.ParseJID(rawJID)
+					if err != nil {
+						sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": "Invalid JID: " + err.Error()})
+						continue
+					}
+
+					j = j.ToNonAD()
+					if j.Server == types.DefaultUserServer {
+						jids = append(jids, j)
+					} else {
+						pn, err := client.Store.LIDs.GetPNForLID(ctx, j)
+						if err == nil && !pn.IsEmpty() {
+							jids = append(jids, pn.ToNonAD())
+						}
+					}
+				}
+
+				info, err := client.GetUserInfo(ctx, jids)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+
+				result := make([]map[string]interface{}, 0, len(jids))
+				for _, jid := range jids {
+					user, ok := info[jid]
+					if !ok {
+						continue
+					}
+
+					contact, _ := client.Store.Contacts.GetContact(ctx, jid)
+					name := contact.FullName
+					if name == "" {
+						name = contact.FirstName
+					}
+					if name == "" {
+						name = contact.PushName
+					}
+					if name == "" {
+						name = contact.BusinessName
+					}
+
+					result = append(result, map[string]interface{}{
+						"jid_pn":  jid.String(),
+						"jid_lid": user.LID.String(),
+						"name":    name,
+						"info":    user.Status,
+					})
+				}
+
+				sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": result})
+
+			case "isOnWhatsApp":
+				var p IsOnWhatsAppPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				info, err := client.IsOnWhatsApp(ctx, p.Phones)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+				}
+
+			case "getJoinedGroups":
+				info, err := client.GetJoinedGroups(ctx)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+				}
+
+			case "getGroupInfoFromLink":
+				var p GroupLinkPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				info, err := client.GetGroupInfoFromLink(ctx, p.Code)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+				}
+
+			case "joinGroupWithLink":
+				var p GroupLinkPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := client.JoinGroupWithLink(ctx, p.Code)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": jid.String()})
+				}
+
+			case "leaveGroup":
+				var p GroupJIDPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				err = client.LeaveGroup(ctx, jid)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "getBusinessProfile":
+				var p GroupJIDPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				info, err := client.GetBusinessProfile(ctx, jid)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+				}
+
+			case "sendPresence":
+				var p PresencePayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				state := types.PresenceAvailable
+				if strings.EqualFold(p.State, "unavailable") || strings.EqualFold(p.State, "offline") {
+					state = types.PresenceUnavailable
+				}
+				err := client.SendPresence(ctx, state)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "sendChatPresence":
+				var p ChatPresencePayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				state := types.ChatPresenceComposing
+				if strings.EqualFold(p.State, "paused") || strings.EqualFold(p.State, "stop") {
+					state = types.ChatPresencePaused
+				}
+				media := types.ChatPresenceMediaText
+				if strings.EqualFold(p.Media, "audio") || strings.EqualFold(p.Media, "recording") {
+					media = types.ChatPresenceMediaAudio
+				}
+				err = client.SendChatPresence(ctx, jid, state, media)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "subscribePresence":
+				var p GroupJIDPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				jid, err := types.ParseJID(p.JID)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				err = client.SubscribePresence(ctx, jid)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
+				}
+
+			case "markRead":
+				var p MarkReadPayload
+				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				chat, err := types.ParseJID(p.Chat)
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+					continue
+				}
+				sender := types.JID{}
+				if p.Sender != "" {
+					sender, err = types.ParseJID(p.Sender)
+					if err != nil {
+						sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+						continue
+					}
+				}
+				ts := time.Unix(p.Timestamp, 0)
+				if p.Timestamp == 0 {
+					ts = time.Now()
+				}
+				ids := make([]types.MessageID, 0, len(p.IDs))
+				for _, id := range p.IDs {
+					ids = append(ids, id)
+				}
+				if p.Played {
+					err = client.MarkRead(ctx, ids, ts, chat, sender, types.ReceiptTypePlayed)
+				} else {
+					err = client.MarkRead(ctx, ids, ts, chat, sender)
+				}
+				if err != nil {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
+				} else {
+					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
 				}
 
 			// Group Metadata
@@ -910,11 +1335,10 @@ func main() {
 							}
 
 							msg = &waProto.Message{
-								ExtendedTextMessage:
-									&waProto.ExtendedTextMessage{
-										Text:        &p.Text,
-										ContextInfo: contextInfo,
-									},
+								ExtendedTextMessage: &waProto.ExtendedTextMessage{
+									Text:        &p.Text,
+									ContextInfo: contextInfo,
+								},
 							}
 						} else {
 							msg = &waProto.Message{
@@ -1093,47 +1517,68 @@ func main() {
 
 			// Send Media
 			case "sendMedia":
-    			var p SendMediaPayload
+				var p SendMediaPayload
 
-    			if err := json.Unmarshal(cmd.Payload, &p); err == nil {
-        			targetJID, err := types.ParseJID(p.JID)
+				if err := json.Unmarshal(cmd.Payload, &p); err == nil {
+					targetJID, err := types.ParseJID(p.JID)
 
-        			if err != nil {
-            			sendIPC("response", map[string]interface{}{
-                			"id":     cmd.ID,
-                			"status": "error",
-                			"error":  "Invalid JID",
-            			})
-            			continue
-        			}
+					if err != nil {
+						sendIPC("response", map[string]interface{}{
+							"id":     cmd.ID,
+							"status": "error",
+							"error":  "Invalid JID",
+						})
+						continue
+					}
 
-        			var fileData []byte
+					var fileData []byte
 
-        			if strings.HasPrefix(p.FilePath, "http://") || strings.HasPrefix(p.FilePath, "https://") {
-            			resp, httpErr := http.Get(p.FilePath)
-            			if httpErr != nil {
-                			sendIPC("response", map[string]interface{}{
-                    			"id":     cmd.ID,
-                    			"status": "error",
-                    			"error":  "Gagal mengambil URL: " + httpErr.Error(),
-                			})
-                			continue
-            			}
-            			defer resp.Body.Close()
+					if strings.HasPrefix(p.FilePath, "http://") || strings.HasPrefix(p.FilePath, "https://") {
+						resp, err := http.Get(p.FilePath)
 
-            			fileData, err = io.ReadAll(resp.Body)
-        			} else {
-            			fileData, err = os.ReadFile(p.FilePath)
-        			}
+						if err != nil {
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  "Gagal mengambil URL: " + err.Error(),
+							})
+							continue
+						}
 
-        			if err != nil {
-            			sendIPC("response", map[string]interface{}{
-                			"id":     cmd.ID,
-                			"status": "error",
-                			"error":  "Gagal membaca file: " + err.Error(),
-            			})
-            			continue
-        			}
+						if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+							resp.Body.Close()
+
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  fmt.Sprintf("Gagal mengambil URL: HTTP %d", resp.StatusCode),
+							})
+							continue
+						}
+
+						fileData, err = io.ReadAll(resp.Body)
+						resp.Body.Close()
+
+						if err != nil {
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  "Gagal membaca URL: " + err.Error(),
+							})
+							continue
+						}
+					} else {
+						fileData, err = os.ReadFile(p.FilePath)
+
+						if err != nil {
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  "File tidak ditemukan: " + err.Error(),
+							})
+							continue
+						}
+					}
 
 					var waMediaType whatsmeow.MediaType
 
@@ -1187,18 +1632,17 @@ func main() {
 
 					case "image":
 						msg = &waProto.Message{
-							ImageMessage:
-								&waProto.ImageMessage{
-									URL:           &uploadResp.URL,
-									DirectPath:    &uploadResp.DirectPath,
-									MediaKey:      uploadResp.MediaKey,
-									FileSHA256:    uploadResp.FileSHA256,
-									FileEncSHA256: uploadResp.FileEncSHA256,
-									FileLength:    &fileLen,
-									Mimetype:      &mimeType,
-									Caption:       &p.Caption,
-									ContextInfo:   contextInfo,
-								},
+							ImageMessage: &waProto.ImageMessage{
+								URL:           &uploadResp.URL,
+								DirectPath:    &uploadResp.DirectPath,
+								MediaKey:      uploadResp.MediaKey,
+								FileSHA256:    uploadResp.FileSHA256,
+								FileEncSHA256: uploadResp.FileEncSHA256,
+								FileLength:    &fileLen,
+								Mimetype:      &mimeType,
+								Caption:       &p.Caption,
+								ContextInfo:   contextInfo,
+							},
 						}
 
 					// Lenwy Was Here: Sticker Support
@@ -1206,35 +1650,33 @@ func main() {
 						mimeSticker := "image/webp"
 
 						msg = &waProto.Message{
-							StickerMessage:
-								&waProto.StickerMessage{
-									URL:           &uploadResp.URL,
-									DirectPath:    &uploadResp.DirectPath,
-									MediaKey:      uploadResp.MediaKey,
-									FileSHA256:    uploadResp.FileSHA256,
-									FileEncSHA256: uploadResp.FileEncSHA256,
-									FileLength:    &fileLen,
-									Mimetype:      &mimeSticker,
-									ContextInfo:   contextInfo,
-								},
+							StickerMessage: &waProto.StickerMessage{
+								URL:           &uploadResp.URL,
+								DirectPath:    &uploadResp.DirectPath,
+								MediaKey:      uploadResp.MediaKey,
+								FileSHA256:    uploadResp.FileSHA256,
+								FileEncSHA256: uploadResp.FileEncSHA256,
+								FileLength:    &fileLen,
+								Mimetype:      &mimeSticker,
+								ContextInfo:   contextInfo,
+							},
 						}
 
 					case "video":
 						mimeVideo := "video/mp4"
 
 						msg = &waProto.Message{
-							VideoMessage:
-								&waProto.VideoMessage{
-									URL:           &uploadResp.URL,
-									DirectPath:    &uploadResp.DirectPath,
-									MediaKey:      uploadResp.MediaKey,
-									FileSHA256:    uploadResp.FileSHA256,
-									FileEncSHA256: uploadResp.FileEncSHA256,
-									FileLength:    &fileLen,
-									Mimetype:      &mimeVideo,
-									Caption:       &p.Caption,
-									ContextInfo:   contextInfo,
-								},
+							VideoMessage: &waProto.VideoMessage{
+								URL:           &uploadResp.URL,
+								DirectPath:    &uploadResp.DirectPath,
+								MediaKey:      uploadResp.MediaKey,
+								FileSHA256:    uploadResp.FileSHA256,
+								FileEncSHA256: uploadResp.FileEncSHA256,
+								FileLength:    &fileLen,
+								Mimetype:      &mimeVideo,
+								Caption:       &p.Caption,
+								ContextInfo:   contextInfo,
+							},
 						}
 
 					case "audio", "sound", "ptt":
@@ -1247,18 +1689,17 @@ func main() {
 						}
 
 						msg = &waProto.Message{
-							AudioMessage:
-								&waProto.AudioMessage{
-									URL:           &uploadResp.URL,
-									DirectPath:    &uploadResp.DirectPath,
-									MediaKey:      uploadResp.MediaKey,
-									FileSHA256:    uploadResp.FileSHA256,
-									FileEncSHA256: uploadResp.FileEncSHA256,
-									FileLength:    &fileLen,
-									Mimetype:      &mimeAudio,
-									PTT:           &isPTT,
-									ContextInfo:   contextInfo,
-								},
+							AudioMessage: &waProto.AudioMessage{
+								URL:           &uploadResp.URL,
+								DirectPath:    &uploadResp.DirectPath,
+								MediaKey:      uploadResp.MediaKey,
+								FileSHA256:    uploadResp.FileSHA256,
+								FileEncSHA256: uploadResp.FileEncSHA256,
+								FileLength:    &fileLen,
+								Mimetype:      &mimeAudio,
+								PTT:           &isPTT,
+								ContextInfo:   contextInfo,
+							},
 						}
 
 					default:
@@ -1270,19 +1711,18 @@ func main() {
 						}
 
 						msg = &waProto.Message{
-							DocumentMessage:
-								&waProto.DocumentMessage{
-									URL:           &uploadResp.URL,
-									DirectPath:    &uploadResp.DirectPath,
-									MediaKey:      uploadResp.MediaKey,
-									FileSHA256:    uploadResp.FileSHA256,
-									FileEncSHA256: uploadResp.FileEncSHA256,
-									FileLength:    &fileLen,
-									Mimetype:      &mimeType,
-									Title:         &docName,
-									FileName:      &docName,
-									ContextInfo:   contextInfo,
-								},
+							DocumentMessage: &waProto.DocumentMessage{
+								URL:           &uploadResp.URL,
+								DirectPath:    &uploadResp.DirectPath,
+								MediaKey:      uploadResp.MediaKey,
+								FileSHA256:    uploadResp.FileSHA256,
+								FileEncSHA256: uploadResp.FileEncSHA256,
+								FileLength:    &fileLen,
+								Mimetype:      &mimeType,
+								Title:         &docName,
+								FileName:      &docName,
+								ContextInfo:   contextInfo,
+							},
 						}
 					}
 
