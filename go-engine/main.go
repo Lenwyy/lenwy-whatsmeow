@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -1529,15 +1530,53 @@ func main() {
 						continue
 					}
 
-					fileData, err := os.ReadFile(p.FilePath)
+					var fileData []byte
 
-					if err != nil {
-						sendIPC("response", map[string]interface{}{
-							"id":     cmd.ID,
-							"status": "error",
-							"error":  "File tidak ditemukan: " + err.Error(),
-						})
-						continue
+					if strings.HasPrefix(p.FilePath, "http://") || strings.HasPrefix(p.FilePath, "https://") {
+						resp, err := http.Get(p.FilePath)
+
+						if err != nil {
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  "Gagal mengambil URL: " + err.Error(),
+							})
+							continue
+						}
+
+						if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+							resp.Body.Close()
+
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  fmt.Sprintf("Gagal mengambil URL: HTTP %d", resp.StatusCode),
+							})
+							continue
+						}
+
+						fileData, err = io.ReadAll(resp.Body)
+						resp.Body.Close()
+
+						if err != nil {
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  "Gagal membaca URL: " + err.Error(),
+							})
+							continue
+						}
+					} else {
+						fileData, err = os.ReadFile(p.FilePath)
+
+						if err != nil {
+							sendIPC("response", map[string]interface{}{
+								"id":     cmd.ID,
+								"status": "error",
+								"error":  "File tidak ditemukan: " + err.Error(),
+							})
+							continue
+						}
 					}
 
 					var waMediaType whatsmeow.MediaType
