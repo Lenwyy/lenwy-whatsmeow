@@ -5,7 +5,6 @@
 // Thanks to the following libraries:
 // - github.com/mattn/go-sqlite3
 // - go.mau.fi/whatsmeow
-// - github.com/kingard888
 
 import { spawn } from "child_process";
 import readline from "readline";
@@ -55,9 +54,7 @@ export class WhatsMeowBridge extends EventEmitter {
     }
 
     if (!fs.existsSync(binaryPath)) {
-      throw new Error(
-        `[BRIDGE] Binary engine tidak ditemukan: ${binaryPath}`
-      );
+      throw new Error(`[BRIDGE] Binary engine tidak ditemukan: ${binaryPath}`);
     }
 
     this.goProcess = spawn(binaryPath, [this.sessionName], {
