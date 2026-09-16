@@ -95,37 +95,6 @@ type GroupLinkPayload struct {
 	Code string `json:"code"`
 }
 
-type NewsletterMetadataPayload struct {
-	Type string `json:"type"`
-	Key  string `json:"key"`
-}
-
-type NewsletterJIDPayload struct {
-	JID string `json:"jid"`
-}
-
-type NewsletterCreatePayload struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
-type NewsletterReactPayload struct {
-	JID      string `json:"jid"`
-	ServerID int    `json:"serverId"`
-	Reaction string `json:"reaction"`
-}
-
-type NewsletterMessagesPayload struct {
-	JID    string `json:"jid"`
-	Count  int    `json:"count"`
-	Before int    `json:"before"`
-}
-
-type NewsletterMarkViewedPayload struct {
-	JID       string `json:"jid"`
-	ServerIDs []int  `json:"serverIds"`
-}
-
 type PresencePayload struct {
 	State string `json:"state"`
 }
@@ -603,6 +572,7 @@ func main() {
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
 					continue
 				}
+
 				jids := make([]types.JID, 0, len(p.JIDs))
 				for _, rawJID := range p.JIDs {
 					j, err := types.ParseJID(rawJID)
@@ -610,14 +580,52 @@ func main() {
 						sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": "Invalid JID: " + err.Error()})
 						continue
 					}
-					jids = append(jids, j.ToNonAD())
+
+					j = j.ToNonAD()
+					if j.Server == types.DefaultUserServer {
+						jids = append(jids, j)
+					} else {
+						pn, err := client.Store.LIDs.GetPNForLID(ctx, j)
+						if err == nil && !pn.IsEmpty() {
+							jids = append(jids, pn.ToNonAD())
+						}
+					}
 				}
+
 				info, err := client.GetUserInfo(ctx, jids)
 				if err != nil {
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
+					continue
 				}
+
+				result := make([]map[string]interface{}, 0, len(jids))
+				for _, jid := range jids {
+					user, ok := info[jid]
+					if !ok {
+						continue
+					}
+
+					contact, _ := client.Store.Contacts.GetContact(ctx, jid)
+					name := contact.FullName
+					if name == "" {
+						name = contact.FirstName
+					}
+					if name == "" {
+						name = contact.PushName
+					}
+					if name == "" {
+						name = contact.BusinessName
+					}
+
+					result = append(result, map[string]interface{}{
+						"jid_pn":  jid.String(),
+						"jid_lid": user.LID.String(),
+						"name":    name,
+						"info":    user.Status,
+					})
+				}
+
+				sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": result})
 
 			case "isOnWhatsApp":
 				var p IsOnWhatsAppPayload
@@ -682,155 +690,6 @@ func main() {
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
 				} else {
 					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
-				}
-
-			case "newsletterMetadata":
-				var p NewsletterMetadataPayload
-				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				var info *types.NewsletterMetadata
-				var err error
-				if strings.EqualFold(p.Type, "invite") {
-					info, err = client.GetNewsletterInfoWithInvite(ctx, p.Key)
-				} else {
-					jid, parseErr := types.ParseJID(p.Key)
-					if parseErr != nil {
-						sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": parseErr.Error()})
-						continue
-					}
-					info, err = client.GetNewsletterInfo(ctx, jid)
-				}
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
-				}
-
-			case "newsletterFollow", "newsletterUnfollow", "newsletterMute", "newsletterUnmute":
-				var p NewsletterJIDPayload
-				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				jid, err := types.ParseJID(p.JID)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				switch cmd.Action {
-				case "newsletterFollow":
-					err = client.FollowNewsletter(ctx, jid)
-				case "newsletterUnfollow":
-					err = client.UnfollowNewsletter(ctx, jid)
-				case "newsletterMute":
-					err = client.NewsletterToggleMute(ctx, jid, true)
-				case "newsletterUnmute":
-					err = client.NewsletterToggleMute(ctx, jid, false)
-				}
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
-				}
-
-			case "newsletterCreate":
-				var p NewsletterCreatePayload
-				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				info, err := client.CreateNewsletter(ctx, whatsmeow.CreateNewsletterParams{Name: p.Name, Description: p.Description})
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
-				}
-
-			case "newsletterReactMessage":
-				var p NewsletterReactPayload
-				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				jid, err := types.ParseJID(p.JID)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				err = client.NewsletterSendReaction(ctx, jid, types.MessageServerID(p.ServerID), p.Reaction, "")
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
-				}
-
-			case "newsletterSubscribed":
-				info, err := client.GetSubscribedNewsletters(ctx)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": info})
-				}
-
-			case "newsletterFetchMessages":
-				var p NewsletterMessagesPayload
-				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				jid, err := types.ParseJID(p.JID)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				params := &whatsmeow.GetNewsletterMessagesParams{Count: p.Count, Before: types.MessageServerID(p.Before)}
-				messages, err := client.GetNewsletterMessages(ctx, jid, params)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": messages})
-				}
-
-			case "newsletterMarkViewed":
-				var p NewsletterMarkViewedPayload
-				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				jid, err := types.ParseJID(p.JID)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				serverIDs := make([]types.MessageServerID, 0, len(p.ServerIDs))
-				for _, serverID := range p.ServerIDs {
-					serverIDs = append(serverIDs, types.MessageServerID(serverID))
-				}
-				err = client.NewsletterMarkViewed(ctx, jid, serverIDs)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": true})
-				}
-
-			case "newsletterSubscribeLiveUpdates":
-				var p NewsletterJIDPayload
-				if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				jid, err := types.ParseJID(p.JID)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-					continue
-				}
-				interval, err := client.NewsletterSubscribeLiveUpdates(ctx, jid)
-				if err != nil {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "error", "error": err.Error()})
-				} else {
-					sendIPC("response", map[string]interface{}{"id": cmd.ID, "status": "ok", "resp": interval.String()})
 				}
 
 			case "getBusinessProfile":
