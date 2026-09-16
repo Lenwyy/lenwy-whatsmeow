@@ -19,22 +19,6 @@ export function makeWASocket(options = {}) {
     joinGroupWithLink: (code) => bridge.joinGroupWithLink(code),
     leaveGroup: (jid) => bridge.leaveGroup(jid),
     getBusinessProfile: (jid) => bridge.getBusinessProfile(jid),
-    newsletterMetadata: (type, key) => bridge.newsletterMetadata(type, key),
-    newsletterFollow: (jid) => bridge.newsletterFollow(jid),
-    newsletterUnfollow: (jid) => bridge.newsletterUnfollow(jid),
-    newsletterMute: (jid) => bridge.newsletterMute(jid),
-    newsletterUnmute: (jid) => bridge.newsletterUnmute(jid),
-    newsletterCreate: (name, description) =>
-      bridge.newsletterCreate(name, description),
-    newsletterReactMessage: (jid, serverId, emoji) =>
-      bridge.newsletterReactMessage(jid, serverId, emoji),
-    newsletterSubscribed: () => bridge.newsletterSubscribed(),
-    newsletterFetchMessages: (jid, count, before) =>
-      bridge.newsletterFetchMessages(jid, count, before),
-    newsletterMarkViewed: (jid, serverIds) =>
-      bridge.newsletterMarkViewed(jid, serverIds),
-    newsletterSubscribeLiveUpdates: (jid) =>
-      bridge.newsletterSubscribeLiveUpdates(jid),
     sendPresence: (state) => bridge.sendPresence(state),
     sendChatPresence: (jid, state, media) =>
       bridge.sendChatPresence(jid, state, media),
