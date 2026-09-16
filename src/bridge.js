@@ -658,6 +658,7 @@ export class WhatsMeowBridge extends EventEmitter {
         "",
         quotedId,
         quotedSender,
+        Boolean(content.gifPlayback),
       );
     }
 
@@ -722,6 +723,7 @@ export class WhatsMeowBridge extends EventEmitter {
     fileName,
     quotedId,
     quotedSender,
+    gifPlayback = false,
   ) {
     const command = JSON.stringify({
       action: "sendMedia",
@@ -734,6 +736,7 @@ export class WhatsMeowBridge extends EventEmitter {
         fileName,
         quotedId,
         quotedSender,
+        gifPlayback,
       },
     });
 
