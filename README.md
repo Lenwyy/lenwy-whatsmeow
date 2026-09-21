@@ -13,6 +13,7 @@ Jadi kamu tetap menulis kode dengan sintaks yang familiar, tapi mendapat keuntun
 - **Auto reconnect** — kalau internet putus, koneksi otomatis dipulihkan tanpa perlu scan ulang.
 - **Aman untuk sesi** — proses shutdown (`Ctrl+C`, dsb) ditangani dengan baik supaya database sesi tidak corrupt.
 - **Fitur media siap pakai** — kirim/download media, convert ke voice note, buat stiker (statis & animasi), kompres gambar, sampai ubah stiker balik jadi gambar/video — semua sudah dibungkus jadi satu perintah.
+- **Info & Interaksi Lengkap** — cek status kontak, gabung/keluar grup lewat link, presence (online/mengetik), foto profil, dan lainnya.
 
 ---
 
@@ -124,6 +125,12 @@ await conn.sendMessage(jid, {
   caption: "Deskripsi Video",
 });
 
+// Kirim Video Sebagai GIF (Auto-Loop, Tanpa Suara)
+await conn.sendMessage(jid, {
+  video: "./animasi.mp4",
+  gifPlayback: true,
+});
+
 // Kirim Gambar/Video Langsung Dari URL
 await conn.sendMessage(jid, {
   image: { url: "https://example.com/image.jpg" },
@@ -163,68 +170,39 @@ await conn.sendMessage(
 
 ## Reaksi, Hapus, dan Edit Pesan
 
-Untuk fitur ini, kamu butuh informasi pesan yang dibalas (`quoted message`). Gunakan helper `getQuotedInfo()` berikut untuk mengekstraknya dengan aman dari berbagai format struktur data:
+Setiap pesan masuk (`m`) sudah otomatis membawa info pesan yang di-reply (kalau ada) — kamu **tidak perlu lagi** menulis fungsi pencarian manual. Library menyimpan cache pesan terakhir secara internal, jadi walaupun pesan yang di-reply itu sudah agak lama, `m.quotedText` dan `m.quotedType` tetap bisa terisi otomatis.
 
 ```javascript
-function getQuotedInfo(m, meta, raw) {
-  const id =
-    meta?.quotedId ||
-    meta?.quotedID ||
-    meta?.quotedMessageId ||
-    meta?.quoted?.id ||
-    raw?.quotedId;
+sock.ev.on("messages.upsert", ({ m }) => {
+  if (m.quotedId) {
+    const quoted = { id: m.quotedId, participant: m.quotedSender };
 
-  const participant =
-    meta?.quotedSender ||
-    meta?.quotedParticipant ||
-    meta?.quoted?.sender ||
-    raw?.quotedSender ||
-    "";
+    // Kasih Reaksi Emoji
+    await conn.react(jid, quoted, "☘️");
 
-  if (id) {
-    return { id, participant };
+    // Hapus Pesan
+    await conn.deleteMessage(jid, quoted);
+
+    // Edit Pesan
+    await conn.editMessage(jid, { id: quoted.id }, "Pesan Ini Telah Diperbarui");
+
+    // Bonus: Isi Teks & Tipe Pesan Yang Di-Reply, Otomatis Dari Cache Internal
+    console.log("Teks Yang Di-Reply:", m.quotedText);
+    console.log("Tipe Pesan Yang Di-Reply:", m.quotedType); // "Chat", "Image", dsb
   }
-
-  const deepSearch = (obj) => {
-    if (!obj || typeof obj !== "object") return null;
-
-    const stanza = obj.stanzaId || obj.stanzaID || obj.StanzaID;
-    if (stanza) {
-      return {
-        id: stanza,
-        participant: obj.participant || obj.Participant || "",
-      };
-    }
-
-    for (const k of Object.keys(obj)) {
-      if (typeof obj[k] === "object" && obj[k] !== null) {
-        const res = deepSearch(obj[k]);
-        if (res) return res;
-      }
-    }
-    return null;
-  };
-
-  return deepSearch(raw) || deepSearch(m);
-}
+});
 ```
 
-Setelah dapat `quoted`, kamu bisa langsung pakai:
+**Field yang tersedia di `m` untuk pesan yang di-reply:**
 
-```javascript
-const quoted = getQuotedInfo(m, meta, raw);
+| Field | Isi |
+| :--- | :--- |
+| `m.quotedId` | ID Pesan Yang Di-Reply |
+| `m.quotedSender` | JID Pengirim Pesan Yang Di-Reply |
+| `m.quotedType` | Tipe Pesan Yang Di-Reply (`Chat`, `Image`, dll) |
+| `m.quotedText` | Isi Teks Pesan Yang Di-Reply (Diambil Dari Cache Internal Kalau Tidak Terkirim Langsung) |
 
-if (quoted) {
-  // Kasih reaksi emoji
-  await conn.react(jid, { id: quoted.id, participant: quoted.participant }, "☘️");
-
-  // Hapus pesan
-  await conn.deleteMessage(jid, { id: quoted.id, participant: quoted.participant });
-
-  // Edit pesan
-  await conn.editMessage(jid, { id: quoted.id }, "Pesan ini telah diperbarui");
-}
-```
+> **Catatan:** Kalau kamu masih pakai fungsi `getQuotedInfo()` custom dari versi sebelumnya, itu tetap berfungsi (karena `raw.quotedId`/`raw.quotedSender` tetap ada), tapi sudah tidak wajib lagi untuk kasus pemakaian umum.
 
 ---
 
@@ -283,6 +261,89 @@ const inviteLink = await conn.groupInviteCode(groupJid);
 const newInviteLink = await conn.groupRevokeInviteCode(groupJid);
 ```
 
+### Gabung & Keluar Grup Lewat Link
+
+```javascript
+// Lihat Info Grup Dari Link Undangan (Tanpa Ikut Gabung Dulu)
+const groupInfo = await conn.getGroupInfoFromLink("kodeInviteDisini");
+console.log(groupInfo);
+
+// Gabung Ke Grup Pakai Kode Undangan
+const joinResult = await conn.joinGroupWithLink("kodeInviteDisini");
+console.log(joinResult);
+
+// Keluar Dari Grup
+await conn.leaveGroup(groupJid);
+
+// Lihat Semua Grup Yang Sudah Diikuti Bot
+const groups = await conn.getJoinedGroups();
+console.log(groups);
+```
+
+---
+
+## Info Kontak & Akun
+
+```javascript
+// Cek Info User (Bisa Satu JID Atau Array JID)
+const info = await conn.getUserInfo(["628xxx@s.whatsapp.net"]);
+console.log(info);
+
+// Cek Apakah Nomor Terdaftar Di WhatsApp
+const checkResult = await conn.isOnWhatsApp(["628xxxxxxxxxx"]);
+console.log(checkResult);
+
+// Ambil Info Akun Bisnis (Kalau Kontaknya Akun Bisnis)
+const business = await conn.getBusinessProfile(jid);
+console.log(business);
+
+// Ambil URL Foto Profil
+const avatarUrl = await conn.profilePictureUrl(jid);
+console.log(avatarUrl);
+```
+
+> Bentuk data yang dikembalikan method-method di atas mengikuti struktur bawaan `whatsmeow` — silakan `console.log()` hasilnya untuk melihat field yang tersedia sesuai kebutuhan kamu.
+
+---
+
+## Presence (Status Online & Mengetik)
+
+```javascript
+// Set Status Kamu (Bot) Jadi Online/Offline
+await conn.sendPresence("available");   // Online
+await conn.sendPresence("unavailable"); // Offline
+
+// Tampilkan Indikator "Sedang Mengetik..." Di Chat Tertentu
+await conn.sendChatPresence(jid, "composing", "text");
+
+// Tampilkan Indikator "Sedang Merekam Audio..."
+await conn.sendChatPresence(jid, "recording", "audio");
+
+// Hentikan Indikator (Kembali Netral)
+await conn.sendChatPresence(jid, "paused");
+
+// Berlangganan Update Presence Kontak Tertentu (Online/Terakhir Dilihat)
+await conn.subscribePresence(jid);
+```
+
+---
+
+## Tandai Pesan Sudah Dibaca
+
+```javascript
+// Bentuk Sederhana (Positional Arguments)
+await conn.markRead(["idPesan1", "idPesan2"], timestamp, chatJid, senderJid);
+
+// Atau Bentuk Object (Lebih Jelas)
+await conn.markRead({
+  ids: ["idPesan1", "idPesan2"],
+  timestamp: raw.timestamp,
+  chat: raw.chat,
+  sender: raw.senderJid,
+  played: false, // true Kalau Mau Tandai Voice Note Sebagai "Sudah Diputar"
+});
+```
+
 ---
 
 ## Download Media
@@ -290,10 +351,8 @@ const newInviteLink = await conn.groupRevokeInviteCode(groupJid);
 Gunakan `conn.downloadMedia()` untuk mengunduh gambar, video, stiker, audio, atau dokumen dari pesan yang dibalas.
 
 ```javascript
-const quoted = getQuotedInfo(m, meta, raw);
-
 const res = await conn.downloadMedia(
-  { id: quoted.id },
+  { id: m.quotedId },
   "./downloads", // Folder tujuan
 );
 
@@ -315,7 +374,7 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
-const res = await conn.downloadMedia({ id: quoted.id }, DOWNLOAD_DIR);
+const res = await conn.downloadMedia({ id: m.quotedId }, DOWNLOAD_DIR);
 ```
 
 ---
@@ -328,9 +387,7 @@ Contoh alur pemakaian di dalam handler pesan:
 
 ```javascript
 if (["tovn"].includes(command)) {
-  const quoted = getQuotedInfo(m, meta, raw);
-
-  if (!quoted) {
+  if (!m.quotedId) {
     return conn.sendMessage(jid, { text: "Balas pesan audio dulu ya!" });
   }
 
@@ -348,9 +405,7 @@ Balas gambar dengan perintah  `.kompres` untuk mengompres ukurannya (kualitas JP
 
 ```javascript
 if (["kompres"].includes(command)) {
-  const quoted = getQuotedInfo(m, meta, raw);
-
-  if (!quoted) {
+  if (!m.quotedId) {
     return conn.sendMessage(jid, { text: "Balas gambar dulu ya!" });
   }
 
@@ -444,11 +499,14 @@ A: Tidak. Engine akan otomatis mencoba menyambung ulang di latar belakang. Kamu 
 **Q: Muncul error `"Go process belum berjalan."` saat memanggil `requestPairingCode()` (atau method lain).**
 A: `makeWASocket()` hanya menyiapkan instance-nya saja, belum menyalakan proses Go engine-nya. Kamu wajib memanggil `conn.start()` secara manual sebelum menggunakan method apa pun (`requestPairingCode`, `sendMessage`, dll). Perintah yang dipanggil setelah `start()` akan otomatis antre sampai proses Go-nya siap, jadi tidak perlu menambahkan delay/`setTimeout` manual.
 
+**Q: Apa bedanya `sendPresence()` dan `sendChatPresence()`?**
+A: `sendPresence()` mengatur status online/offline bot secara global (`available`/`unavailable`). `sendChatPresence()` mengatur indikator "sedang mengetik"/"sedang merekam" di chat tertentu (`composing`/`recording`/`paused`), dan hanya terlihat oleh lawan chat di percakapan itu.
+
 ## Credit
 - github.com/Lenwyy
 - github.com/kingard888
 
 ## License
 
-Proyek ini dilisensikan di bawah [Mozilla Public License 2.0](LICENSE). 
-Proyek ini dibungkus menggunakan dan memanfaatkan library [whatsmeow](https://github.com/tulir/whatsmeow) yang berlisensi MPL-2.0.
+- Proyek ini dilisensikan di bawah [Mozilla Public License 2.0](LICENSE). 
+- Proyek ini dibungkus menggunakan dan memanfaatkan library [whatsmeow](https://github.com/tulir/whatsmeow) yang berlisensi MPL-2.0.
